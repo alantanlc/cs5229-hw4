@@ -250,7 +250,7 @@ public class NAT implements IOFMessageListener, IFloodlightModule {
 				while(it.hasNext()) {
 					Map.Entry pair = (Map.Entry) it.next();
 					pair.setValue( (int) pair.getValue() + 1 );
-					if((int) pair.getValue() >= 60) {
+					if((int) pair.getValue() >= 120) {
 							ClientIPDataHashCodeMap.remove(pair.getKey());
 							RouterMACDataHashCodeMap.remove(pair.getKey());
 							it.remove();
