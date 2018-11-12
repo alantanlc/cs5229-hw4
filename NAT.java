@@ -1,3 +1,6 @@
+// Name: Tan Lai Chian Alan
+// Matric No: A0174404L
+
 package net.floodlightcontroller.natcs5229;
 
 import net.floodlightcontroller.core.FloodlightContext;
@@ -41,8 +44,9 @@ public class NAT implements IOFMessageListener, IFloodlightModule {
     HashMap<Integer, String> IPTransMap = new HashMap<>();
     HashMap<String, OFPort> IPPortMap = new HashMap<>();
     HashMap<String, String> IPMacMap = new HashMap<>();
-    HashMap<Integer, String> ClientIPDataHashCodeMap = new HashMap<>();	// Use Data hashCode as QueryID
-    HashMap<Integer, String> RouterMACDataHashCodeMap = new HashMap<>();
+    public HashMap<Integer, String> ClientIPDataHashCodeMap = new HashMap<>();	// Use Data hashCode as QueryID
+    public HashMap<Integer, String> RouterMACDataHashCodeMap = new HashMap<>();
+    public HashMap<Integer, Integer> TimerDataHashCodeMap = new HashMap<>(); // Used to handle Query ID Timeout
 
     @Override
     public String getName() {
@@ -58,10 +62,6 @@ public class NAT implements IOFMessageListener, IFloodlightModule {
     public boolean isCallbackOrderingPostreq(OFType type, String name) {
         return false;
     }
-
-
-
-
 
     // Main Place to Handle PacketIN to perform NAT
     private Command handlePacketIn(IOFSwitch sw, OFPacketIn pi, FloodlightContext cntx) {
@@ -124,6 +124,7 @@ public class NAT implements IOFMessageListener, IFloodlightModule {
 
 		ClientIPDataHashCodeMap.put(data.hashCode(), srcIp.toString());
 		RouterMACDataHashCodeMap.put(data.hashCode(), dstMACAddress);
+		TimerDataHashCodeMap.put(data.hashCode(), 0);
 
 		IPv4 ip = new IPv4();
 		ip.setTtl((byte) 64);
@@ -165,6 +166,8 @@ public class NAT implements IOFMessageListener, IFloodlightModule {
 		// Get client ip address using data hash code
 		String clientIp = ClientIPDataHashCodeMap.get(data.hashCode());
 		String routerMAC = RouterMACDataHashCodeMap.get(data.hashCode());
+		RouterMACDataHashCodeMap.remove(data.hashCode());
+		TimerDataHashCodeMap.remove(data.hashCode());
 	
 		IPacket ethPacket = new Ethernet()
 			.setEtherType(EthType.IPv4)
@@ -237,6 +240,32 @@ public class NAT implements IOFMessageListener, IFloodlightModule {
 		return Command.CONTINUE;
 	}
 
+	// Runnable Interface
+	public class Timer implements Runnable {
+		public void run() {
+			logger.info("TIMER RUNNING");
+
+			while(true) {
+				Iterator it = TimerDataHashCodeMap.entrySet().iterator();
+				while(it.hasNext()) {
+					Map.Entry pair = (Map.Entry) it.next();
+					pair.setValue( (int) pair.getValue() + 1 );
+					if((int) pair.getValue() >= 60) {
+							ClientIPDataHashCodeMap.remove(pair.getKey());
+							RouterMACDataHashCodeMap.remove(pair.getKey());
+							it.remove();
+					}
+				}
+
+				try {
+					Thread.sleep(1000);
+				} catch (Exception e) {
+					logger.info("Timer sleep exception");
+				}
+			}
+		}
+	}
+
     @Override
     public Command receive(IOFSwitch sw, OFMessage msg, FloodlightContext cntx) {
         switch(msg.getType()) {
@@ -289,6 +318,10 @@ public class NAT implements IOFMessageListener, IFloodlightModule {
         IPMacMap.put("192.168.0.10", "00:00:00:00:00:01");
         IPMacMap.put("192.168.0.20", "00:00:00:00:00:02");
         IPMacMap.put("10.0.0.11", "00:00:00:00:00:03");
+
+		// Thread to handle query timeout
+		Thread t1 = new Thread(new Timer());
+		t1.start();
     }
 
     @Override
